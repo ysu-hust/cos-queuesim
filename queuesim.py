@@ -21,13 +21,19 @@ from zipfian_generator import zipfian_generator
 from predictor import *
 
 
-def get_st(ser_rate):
-    ser_type = "deter"
+def get_sertime(ser_rate, ser_type="deter"):
+    # ser_type = "deter"
     # ser_type = "exp"
-    #ser_type = "gamma"
-    #ser_type = "cache"
+    # ser_type = "gamma"
+    # ser_type = "cache"
     if ser_type == "deter":
         return 1.0/ser_rate
+    elif ser_type == "mix":
+        p = random.random()
+        if p > 0.8:
+            return 4.6/ser_rate
+        else:
+            return 0.1/ser_rate
     elif ser_type == "exp":
         return random.expovariate(ser_rate)
     elif ser_type == "gamma":
@@ -67,12 +73,13 @@ class Req(object):
 
 
 class simpleQueue(object):
-    def __init__(self, service_rate):
+    def __init__(self, service_rate, get_st=lambda ser_rate: get_sertime(ser_rate, ser_type="deter")):
         self.srate = service_rate
         self.cur_t = 0
+        self.get_st = get_st
 
     def get_stime(self):
-        return get_st(self.srate)
+        return self.get_st(self.srate)
 
     def arrive(self, t):
         # print t, self.cur_t
@@ -87,7 +94,7 @@ class simpleQueue(object):
 
 
 class Que(object):
-    def __init__(self, cache=None, generator=None, successor=None):
+    def __init__(self, cache=None, generator=None, successor=None, get_st=lambda ser_rate: get_sertime(ser_rate, ser_type="deter")):
         self.q = []
         self.cur_t = {}
         self.res = []
@@ -95,6 +102,7 @@ class Que(object):
         self.generator = generator
         self.successor = successor
         self.ac_list = {}
+        self.get_st = get_st
 
     def start(self, n, rate):
         cur_t = 0
@@ -123,7 +131,7 @@ class Que(object):
             else:
                 req = Req()
             req.start(i)
-            st = get_st(ser_rate)
+            st = self.get_st(ser_rate)
             cur_ser = -1
             cur_time = float('inf')
             for j in range(n):
@@ -157,7 +165,7 @@ class Que(object):
             if cur_time < i:
                 cur_time = i
             if self.cache.get(obj_name) > 0:
-                st = get_st(ser_rate)
+                st = self.get_st(ser_rate)
                 hits += 1
             else:
                 self.cache.set(obj_name, 1)
@@ -204,7 +212,7 @@ class Que(object):
                 else:
                     req = Req()
                 req.start(t)
-                st = get_st(ser_rate)
+                st = self.get_st(ser_rate)
                 cur_time += st
                 self.cur_t[cur_ser] = cur_time
                 req.finish(self.cur_t[cur_ser])
@@ -234,7 +242,7 @@ class Que(object):
                 req = Req(obj_name=obj_name)
                 req.start(t)
                 if self.cache.get(obj_name) > 0:
-                    st = get_st(ser_rate)
+                    st = self.get_st(ser_rate)
                     hits += 1
                 else:
                     self.cache.set(obj_name, 1)
@@ -275,7 +283,7 @@ class Que(object):
         durs.sort()
         print sum(durs), min(durs), max(durs)
         ress = []
-        for i in [20, 40, 60, 80, 90, 95, 99]:
+        for i in [5, 10, 20, 40, 60, 80, 90, 95, 99]:
             idx = int(i/100.0*len(durs))
             #print idx
             ress.append((i, durs[idx]))
@@ -285,80 +293,81 @@ class Que(object):
         return ress
 
 
-cache = LRUCache(2000)
-gen = zipfian_generator(0, 10000, zipfianconstant=0.9)
+if __name__ == '__main__':
+    cache = LRUCache(2000)
+    gen = zipfian_generator(0, 10000, zipfianconstant=0.9)
 
-srate = 100000.0
-ratio21 = 1000.0
-cache_hit_ratio = 0.65
-arate_max = srate/ratio21/(1-cache_hit_ratio)
-arate = arate_max*0.7
+    srate = 100000.0
+    ratio21 = 1000.0
+    cache_hit_ratio = 0.65
+    arate_max = srate/ratio21/(1-cache_hit_ratio)
+    arate = arate_max*0.7
 
-successor = simpleQueue(srate/ratio21)
+    successor = simpleQueue(srate/ratio21)
 
-no = 4
+    no = 4
 
-cache.clear()
-successor.clear()
-q1 = Que(cache=cache, generator=gen, successor=successor)
-q1.warmup(50000)
-q1.start(100000, arate)
-q1.cache_proc(1, srate)
-q1.mean()
-q1.percentile()
+    cache.clear()
+    successor.clear()
+    q1 = Que(cache=cache, generator=gen, successor=successor)
+    q1.warmup(50000)
+    q1.start(100000, arate)
+    q1.cache_proc(1, srate)
+    q1.mean()
+    q1.percentile()
 
-cache.clear()
-successor.clear()
-q2 = Que(cache=cache, generator=gen, successor=successor)
-q2.warmup(50000)
-q2.start(100000, arate)
-hits2, misses2 = q2.cache_proc(no, srate)
-q2.mean()
-ress2 = q2.percentile()
+    cache.clear()
+    successor.clear()
+    q2 = Que(cache=cache, generator=gen, successor=successor)
+    q2.warmup(50000)
+    q2.start(100000, arate)
+    hits2, misses2 = q2.cache_proc(no, srate)
+    q2.mean()
+    ress2 = q2.percentile()
 
-cache.clear()
-successor.clear()
-q3 = Que(cache=cache, generator=gen, successor=successor)
-q3.warmup(50000)
-q3.start(100000, arate)
-hits3, misses3 = q3.cache_acproc(no, srate)
-q3.mean()
-ress3 = q3.percentile()
-
-
-hits = hits2
-misses = misses2
-ress = ress2
-
-hits = hits3
-misses = misses3
-ress = ress3
+    cache.clear()
+    successor.clear()
+    q3 = Que(cache=cache, generator=gen, successor=successor)
+    q3.warmup(50000)
+    q3.start(100000, arate)
+    hits3, misses3 = q3.cache_acproc(no, srate)
+    q3.mean()
+    ress3 = q3.percentile()
 
 
-theta = float(misses) / (hits + misses)
-lambd = arate
-mean1 = 1.0/srate
-mean2 = 1.0/(srate/ratio21)
+    hits = hits2
+    misses = misses2
+    ress = ress2
 
-pdf_laplace_func1 = exp_pdf_laplace
-mean_func1 = exp_mean
-var1 = exp_var(mean1)
-pdf_laplace_func2 = exp_pdf_laplace
-var2 = exp_var(mean2)
+    hits = hits3
+    misses = misses3
+    ress = ress3
 
-pdf_laplace_func1 = determin_pdf_laplace
-mean_func1 = determin_mean
-var1 = determin_var(mean1)
-pdf_laplace_func2 = determin_pdf_laplace
-var2 = determin_var(mean2)
 
-cache_pdf_laplace = get_cache_pdf_laplace(lambd, theta, mean1, pdf_laplace_func1, mm1k_mean(mean2, lambd*theta), mm1k_sojourn_pdf_laplace)
-cache_mean_value = cache_mean(lambd, theta, mean1, mean_func1, mean2, mm1k_mean)
+    theta = float(misses) / (hits + misses)
+    lambd = arate
+    mean1 = 1.0/srate
+    mean2 = 1.0/(srate/ratio21)
 
-# print mm1k_mean(mean2, lambd*theta), cache_mean_value
+    pdf_laplace_func1 = exp_pdf_laplace
+    mean_func1 = exp_mean
+    var1 = exp_var(mean1)
+    pdf_laplace_func2 = exp_pdf_laplace
+    var2 = exp_var(mean2)
 
-for per, t in ress:
-    # print t, mg1_sojourn_cdf(t, cache_mean_value, lambd/10.0, cache_pdf_laplace), cache_cdf(t, lambd, theta, mean1, pdf_laplace_func1, mm1k_mean(mean2, lambd*theta), mm1k_sojourn_pdf_laplace)
-    per = per / 100.0
-    p_star, p_ag = cosmodel_reqbased_backend(t, lambd, theta, no, mean1, var1, pdf_laplace_func1, mean2, var2, pdf_laplace_func2)
-    print "%.8f %.2f (%.4f+%.4f)=%.4f %.4f" % (t, per, p_star, p_ag, (p_star+p_ag), mg1_sojourn_cdf(t, cache_mean_value, lambd/float(no), cache_pdf_laplace))
+    pdf_laplace_func1 = determin_pdf_laplace
+    mean_func1 = determin_mean
+    var1 = determin_var(mean1)
+    pdf_laplace_func2 = determin_pdf_laplace
+    var2 = determin_var(mean2)
+
+    cache_pdf_laplace = get_cache_pdf_laplace(lambd, theta, mean1, pdf_laplace_func1, mm1k_mean(mean2, lambd*theta), mm1k_sojourn_pdf_laplace)
+    cache_mean_value = cache_mean(lambd, theta, mean1, mean_func1, mean2, mm1k_mean)
+
+    # print mm1k_mean(mean2, lambd*theta), cache_mean_value
+
+    for per, t in ress:
+        # print t, mg1_sojourn_cdf(t, cache_mean_value, lambd/10.0, cache_pdf_laplace), cache_cdf(t, lambd, theta, mean1, pdf_laplace_func1, mm1k_mean(mean2, lambd*theta), mm1k_sojourn_pdf_laplace)
+        per = per / 100.0
+        p_star, p_ag = cosmodel_reqbased_backend(t, lambd, theta, no, mean1, var1, pdf_laplace_func1, mean2, var2, pdf_laplace_func2)
+        print "%.8f %.2f (%.4f+%.4f)=%.4f %.4f" % (t, per, p_star, p_ag, (p_star+p_ag), mg1_sojourn_cdf(t, cache_mean_value, lambd/float(no), cache_pdf_laplace))
